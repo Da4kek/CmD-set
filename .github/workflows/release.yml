@@ -35,6 +35,8 @@ jobs:
       - name: Build Windows installer
         run: |
           VERSION=${GITHUB_REF_NAME#v}
+          GOOS=windows GOARCH=amd64 CGO_ENABLED=0 \
+            go build -ldflags="-s -w" -o benchlog.exe .
           makensis -DVERSION=$VERSION installer.nsi
           gh release upload $GITHUB_REF_NAME "benchlog-${VERSION}-setup.exe" --clobber
         env:

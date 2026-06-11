@@ -12,7 +12,7 @@ RequestExecutionLevel admin
 
 Section "Install"
   SetOutPath "$INSTDIR"
-  File "dist/benchlog_windows_amd64_v1/benchlog.exe"
+  File "benchlog.exe"
   WriteUninstaller "$INSTDIR\uninstall.exe"
 
   ; Add to system PATH so it works from any terminal
