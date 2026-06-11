@@ -29,6 +29,19 @@ archives:
           - zip
     name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
 
+nfpms:
+  - package_name: benchlog
+    vendor: Da4kek
+    homepage: https://github.com/Da4kek/CmD-set
+    maintainer: Da4kek
+    description: Interactive research notebook and reference manager for researchers.
+    license: MIT
+    formats:
+      - deb
+      - rpm
+      - apk
+    bindir: /usr/bin
+
 checksum:
   name_template: "checksums.txt"
 

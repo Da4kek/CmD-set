@@ -21,9 +21,21 @@ jobs:
           go-version: "1.22"
           cache: true
 
-      - uses: goreleaser/goreleaser-action@v6
+      - name: Install NSIS
+        run: sudo apt-get install -y nsis
+
+      - name: Run GoReleaser
+        uses: goreleaser/goreleaser-action@v6
         with:
           version: latest
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build Windows installer
+        run: |
+          VERSION=${GITHUB_REF_NAME#v}
+          makensis -DVERSION=$VERSION installer.nsi
+          gh release upload $GITHUB_REF_NAME "benchlog-${VERSION}-setup.exe" --clobber
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
