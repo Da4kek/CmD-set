@@ -162,15 +162,20 @@ class MainActivity : Activity() {
 
         termView.setTerminalViewClient(object : TerminalViewClient {
             override fun onScale(scale: Float): Float = 1f
+            override fun onSingleTapUp(e: MotionEvent) {}
+            override fun shouldBackButtonBeMappedToEscape() = false
+            override fun shouldEnforceCharBasedInput() = false
+            override fun shouldUseCtrlSpaceWorkaround() = false
+            override fun isTerminalViewSelected() = true
+            override fun copyModeChanged(copy: Boolean) {}
+            override fun onKeyDown(keyCode: Int, e: KeyEvent, s: TerminalSession) = false
+            override fun onKeyUp(keyCode: Int, e: KeyEvent) = false
             override fun onLongPress(event: MotionEvent) = false
             override fun readControlKey() = false
             override fun readAltKey() = false
-            override fun readFnKey() = false
             override fun readShiftKey() = false
-            override fun onKeyDown(keyCode: Int, e: KeyEvent, s: TerminalSession) = false
-            override fun onKeyUp(keyCode: Int, e: KeyEvent) = false
+            override fun readFnKey() = false
             override fun onCodePoint(cp: Int, ctrl: Boolean, s: TerminalSession) = false
-            override fun copyModeChanged(copy: Boolean) {}
             override fun onEmulatorSet() {}
             override fun logError(tag: String, message: String) {}
             override fun logWarn(tag: String, message: String) {}
