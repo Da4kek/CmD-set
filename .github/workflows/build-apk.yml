@@ -37,9 +37,9 @@ jobs:
       - name: Set up QEMU (for ARM64 image extraction)
         uses: docker/setup-qemu-action@v3
 
-      - name: Extract BusyBox ARM64 static binary
+      - name: Extract BusyBox ARM64 static binary (Alpine = musl, statically linked)
         run: |
-          id=$(docker create --platform linux/arm64 busybox:latest)
+          id=$(docker create --platform linux/arm64 alpine:latest)
           docker cp "$id:/bin/busybox" \
             benchlog-android/app/src/main/jniLibs/arm64-v8a/libbusybox.so
           docker rm "$id"
