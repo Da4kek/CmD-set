@@ -16,6 +16,11 @@ import (
 )
 
 func main() {
+	// Keep Go heap under 64 MiB on Android — the process lives inside a
+	// terminal emulator Activity; runaway GC growth triggers the OOM killer
+	// which can take down system_server and reboot the device.
+	debug.SetMemoryLimit(64 << 20)
+
 	if len(os.Args) >= 2 {
 		switch os.Args[1] {
 		case "add":

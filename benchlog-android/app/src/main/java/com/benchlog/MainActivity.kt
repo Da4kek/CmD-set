@@ -121,14 +121,18 @@ class MainActivity : Activity() {
                 "COLORTERM=truecolor",
                 "LANG=en_US.UTF-8",
                 "TMPDIR=${cacheDir.absolutePath}",
+                "GOGC=50",          // trigger GC at 50% heap growth (default 100%) — keeps RSS low
+                "GOMEMLIMIT=64MiB", // hard ceiling; pairs with SetMemoryLimit() in main()
             ),
-            TerminalEmulator.DEFAULT_TERMINAL_TRANSCRIPT_ROWS,
+            200, // scrollback rows — DEFAULT_TERMINAL_TRANSCRIPT_ROWS is 2000 which
+                 // allocates ~5 MB of color-cell data and contributes to OOM on low-RAM devices
             object : TerminalSessionClient {
                 // onTextChanged fires on a background reader thread.
-                // invalidate() is silently dropped off the UI thread, so
-                // we must dispatch onScreenUpdated() back to the main thread.
+                // postInvalidate() is the thread-safe way to schedule a
+                // view redraw; it coalesces multiple calls per frame,
+                // unlike runOnUiThread which queues a lambda per PTY chunk.
                 override fun onTextChanged(s: TerminalSession) {
-                    runOnUiThread { if (::termView.isInitialized) termView.onScreenUpdated() }
+                    if (::termView.isInitialized) termView.postInvalidate()
                 }
                 override fun onTitleChanged(s: TerminalSession) {}
                 override fun onSessionFinished(s: TerminalSession) = runOnUiThread { onExit(s) }
