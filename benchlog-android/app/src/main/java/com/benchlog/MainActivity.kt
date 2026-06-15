@@ -21,30 +21,70 @@ class MainActivity : Activity() {
     private lateinit var termView: TerminalView
     private lateinit var session: TerminalSession
 
-    private val benchlogBin  by lazy { File(applicationInfo.nativeLibraryDir, "libbenchlog.so") }
-    private val homeDir      by lazy { File(filesDir, "home").also { it.mkdirs() } }
-    private val benchlogDir  by lazy { File(homeDir, ".benchlog") }
-    private val runLog       by lazy { File(benchlogDir, "run.log") }
+    // Source binary — installed by Android's package manager
+    private val nativeLib by lazy { File(applicationInfo.nativeLibraryDir, "libbenchlog.so") }
+    // Executable copy in filesDir — Android guarantees apps can exec from here
+    private val execBin  by lazy { File(filesDir, "benchlog") }
+    private val homeDir  by lazy { File(filesDir, "home").also { it.mkdirs() } }
+    private val runLog   by lazy { File(homeDir, ".benchlog", "run.log") }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         try {
-            if (!benchlogBin.exists()) {
-                showDiag("binary not found",
-                    "nativeLibraryDir = ${applicationInfo.nativeLibraryDir}\n" +
-                    "exists           = ${File(applicationInfo.nativeLibraryDir).exists()}\n" +
-                    "contents         = ${File(applicationInfo.nativeLibraryDir).listFiles()?.joinToString { it.name }}")
-                return
-            }
-            runLog.delete()          // clear previous run's log
-            startTerminal()
+            setup()
         } catch (e: Throwable) {
-            showDiag("Java crash in onCreate", e.stackTraceToString())
+            showDiag("Java crash", e.stackTraceToString())
+        }
+    }
+
+    private fun setup() {
+        // ── Step 1: verify source binary exists ───────────────────────────────
+        if (!nativeLib.exists()) {
+            val dir = File(applicationInfo.nativeLibraryDir)
+            showDiag("libbenchlog.so not found",
+                "nativeLibraryDir = ${dir.absolutePath}\n" +
+                "dir exists        = ${dir.exists()}\n" +
+                "contents          = ${dir.listFiles()?.joinToString { it.name } ?: "(empty)"}")
+            return
+        }
+
+        // ── Step 2: copy to filesDir + chmod +x ───────────────────────────────
+        val copyErr = tryCopy()
+        if (copyErr != null) {
+            showDiag("Copy failed", copyErr)
+            return
+        }
+
+        // ── Step 3: sanity-check file permissions ─────────────────────────────
+        val permInfo = buildString {
+            appendLine("source: ${nativeLib.absolutePath}")
+            appendLine("  exists=${nativeLib.exists()} readable=${nativeLib.canRead()} exec=${nativeLib.canExecute()} size=${nativeLib.length()}")
+            appendLine("exec copy: ${execBin.absolutePath}")
+            appendLine("  exists=${execBin.exists()} readable=${execBin.canRead()} exec=${execBin.canExecute()} size=${execBin.length()}")
+        }
+        android.util.Log.d("benchlog", permInfo)
+
+        runLog.delete()
+        startTerminal()
+    }
+
+    private fun tryCopy(): String? {
+        return try {
+            // Only re-copy if binary changed (reinstall)
+            if (!execBin.exists() || execBin.length() != nativeLib.length()) {
+                nativeLib.copyTo(execBin, overwrite = true)
+            }
+            execBin.setExecutable(true, false)
+            execBin.setReadable(true, false)
+            if (!execBin.canExecute()) "setExecutable returned false — filesystem may not support exec" else null
+        } catch (e: Exception) {
+            "Exception during copy: ${e.message}"
         }
     }
 
     private fun startTerminal(args: Array<String> = emptyArray()) {
+        // Remove any previous diagnostic view
         val frame = FrameLayout(this).apply { setBackgroundColor(0xFF000000.toInt()) }
         termView = TerminalView(this, null)
         frame.addView(termView,
@@ -52,7 +92,7 @@ class MainActivity : Activity() {
         setContentView(frame)
 
         session = TerminalSession(
-            benchlogBin.absolutePath,
+            execBin.absolutePath,
             homeDir.absolutePath,
             args,
             arrayOf(
@@ -60,6 +100,7 @@ class MainActivity : Activity() {
                 "TERM=xterm-256color",
                 "COLORTERM=truecolor",
                 "LANG=en_US.UTF-8",
+                "TMPDIR=${cacheDir.absolutePath}",
             ),
             TerminalEmulator.DEFAULT_TERMINAL_TRANSCRIPT_ROWS,
             object : TerminalSessionClient {
@@ -114,33 +155,29 @@ class MainActivity : Activity() {
 
     private fun onExit(s: TerminalSession) {
         val exit = s.exitStatus
-        if (exit == 0) {
-            // clean exit — just restart
-            runLog.delete()
-            startTerminal()
-            return
-        }
-        // non-zero: show diagnostics
-        val log = if (runLog.exists()) runLog.readText() else "(run.log not created — binary may not have executed at all)"
+        val log = runLog.takeIf { it.exists() }?.readText()
+            ?: "run.log not created — Go main() was never reached.\nThis means execve() failed or the binary crashed before main()."
+
         showDiag(
-            "benchlog exited (code $exit)",
+            "exit code $exit",
             buildString {
-                appendLine("binary:  ${benchlogBin.absolutePath}")
-                appendLine("exists:  ${benchlogBin.exists()}")
-                appendLine("HOME:    ${homeDir.absolutePath}")
+                appendLine("binary:     ${execBin.absolutePath}")
+                appendLine("can exec:   ${execBin.canExecute()}")
+                appendLine("size:       ${execBin.length()} bytes")
                 appendLine()
                 appendLine("=== run.log ===")
-                appendLine(log)
-                appendLine()
-                appendLine("Tap anywhere to run diagnostics mode.")
+                append(log)
             },
-            onTap = { startTerminal(arrayOf("--diag")) }
+            onTap = {
+                runLog.delete()
+                startTerminal(arrayOf("--diag"))
+            }
         )
     }
 
     private fun showDiag(title: String, body: String, onTap: (() -> Unit)? = null) {
         val tv = TextView(this).apply {
-            text = "▶ $title\n\n$body"
+            text = "▶ $title\n\n$body\n\n${if (onTap != null) "[tap to run --diag mode]" else ""}"
             setTextColor(0xFFFF9500.toInt())
             textSize = 11f
             setPadding(32, 60, 32, 32)
@@ -149,8 +186,8 @@ class MainActivity : Activity() {
             if (onTap != null) setOnClickListener { onTap() }
         }
         val scroll = ScrollView(this).apply {
-            addView(tv)
             setBackgroundColor(0xFF000000.toInt())
+            addView(tv)
         }
         setContentView(scroll)
     }

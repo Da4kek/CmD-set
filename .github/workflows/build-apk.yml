@@ -25,11 +25,11 @@ jobs:
           cache: true
           cache-dependency-path: benchlog/go.sum
 
-      - name: Build benchlog for Android (linux/arm64 static)
+      - name: Build benchlog for Android (android/arm64 static)
         run: |
           mkdir -p benchlog-android/app/src/main/jniLibs/arm64-v8a
           cd benchlog
-          GOOS=linux GOARCH=arm64 CGO_ENABLED=0 \
+          GOOS=android GOARCH=arm64 CGO_ENABLED=0 \
             go build -ldflags="-s -w" \
             -o ../benchlog-android/app/src/main/jniLibs/arm64-v8a/libbenchlog.so .
           file ../benchlog-android/app/src/main/jniLibs/arm64-v8a/libbenchlog.so
