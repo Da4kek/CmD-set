@@ -7,6 +7,7 @@ import android.view.MotionEvent
 import android.view.ViewGroup
 import android.view.WindowManager
 import android.widget.FrameLayout
+import android.widget.ScrollView
 import android.widget.TextView
 import com.termux.terminal.TerminalEmulator
 import com.termux.terminal.TerminalSession
@@ -20,45 +21,40 @@ class MainActivity : Activity() {
     private lateinit var termView: TerminalView
     private lateinit var session: TerminalSession
 
-    // benchlog binary — extracted by Android from jniLibs at install time
-    private val benchlogBin by lazy {
-        File(applicationInfo.nativeLibraryDir, "libbenchlog.so")
-    }
-    private val homeDir by lazy { File(filesDir, "home").also { it.mkdirs() } }
+    private val benchlogBin by lazy { File(applicationInfo.nativeLibraryDir, "libbenchlog.so") }
+    private val homeDir     by lazy { File(filesDir, "home").also { it.mkdirs() } }
+    private val dataDir     by lazy { File(homeDir, ".benchlog") }
+    private val runLog      by lazy { File(dataDir, "run.log") }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-
         try {
             if (!benchlogBin.exists()) {
-                showError(
-                    "benchlog binary not found.\n\n" +
-                    "nativeLibraryDir: ${applicationInfo.nativeLibraryDir}\n" +
-                    "exists: ${File(applicationInfo.nativeLibraryDir).exists()}\n" +
-                    "contents: ${File(applicationInfo.nativeLibraryDir).listFiles()?.map { it.name }}"
-                )
+                showDiag("binary not found",
+                    "nativeLibraryDir = ${applicationInfo.nativeLibraryDir}\n" +
+                    "exists           = ${File(applicationInfo.nativeLibraryDir).exists()}\n" +
+                    "contents         = ${File(applicationInfo.nativeLibraryDir).listFiles()?.joinToString { it.name }}")
                 return
             }
+            runLog.delete()          // clear previous run's log
             startTerminal()
         } catch (e: Throwable) {
-            showError("Startup error:\n${e.javaClass.simpleName}: ${e.message}")
+            showDiag("Java crash in onCreate", e.stackTraceToString())
         }
     }
 
-    private fun startTerminal() {
+    private fun startTerminal(args: Array<String> = emptyArray()) {
         val frame = FrameLayout(this).apply { setBackgroundColor(0xFF000000.toInt()) }
         termView = TerminalView(this, null)
-        frame.addView(
-            termView,
-            ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
-        )
+        frame.addView(termView,
+            ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         setContentView(frame)
 
         session = TerminalSession(
             benchlogBin.absolutePath,
             homeDir.absolutePath,
-            emptyArray(),
+            args,
             arrayOf(
                 "HOME=${homeDir.absolutePath}",
                 "TERM=xterm-256color",
@@ -69,7 +65,7 @@ class MainActivity : Activity() {
             object : TerminalSessionClient {
                 override fun onTextChanged(s: TerminalSession) = termView.onScreenUpdated()
                 override fun onTitleChanged(s: TerminalSession) {}
-                override fun onSessionFinished(s: TerminalSession) = runOnUiThread { restartOrShowError(s) }
+                override fun onSessionFinished(s: TerminalSession) = runOnUiThread { onExit(s) }
                 override fun onCopyTextToClipboard(s: TerminalSession, text: String) {}
                 override fun onPasteTextFromClipboard(s: TerminalSession?) {}
                 override fun onBell(s: TerminalSession) {}
@@ -116,36 +112,47 @@ class MainActivity : Activity() {
         termView.requestFocus()
     }
 
-    private fun restartOrShowError(s: TerminalSession) {
-        // Keep the terminal visible so any crash output is readable.
-        // Overlay a dim restart banner at the bottom.
-        val exitCode = s.exitStatus
-        val banner = android.widget.TextView(this).apply {
-            text = if (exitCode == 0) "benchlog exited — tap to restart"
-                   else "benchlog crashed (exit $exitCode) — tap to restart"
-            setTextColor(if (exitCode == 0) 0xFF00FF9F.toInt() else 0xFFFF453A.toInt())
-            textSize = 13f
-            setPadding(32, 20, 32, 20)
-            setBackgroundColor(0xDD000000.toInt())
-            gravity = android.view.Gravity.CENTER
-            setOnClickListener { startTerminal() }
+    private fun onExit(s: TerminalSession) {
+        val exit = s.exitStatus
+        if (exit == 0) {
+            // clean exit — just restart
+            runLog.delete()
+            startTerminal()
+            return
         }
-        val root = window.decorView.findViewById<android.widget.FrameLayout>(android.R.id.content)
-        root.addView(banner, android.widget.FrameLayout.LayoutParams(
-            android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
-            android.widget.FrameLayout.LayoutParams.WRAP_CONTENT,
-            android.view.Gravity.BOTTOM
-        ))
+        // non-zero: show diagnostics
+        val log = if (runLog.exists()) runLog.readText() else "(run.log not created — binary may not have executed at all)"
+        showDiag(
+            "benchlog exited (code $exit)",
+            buildString {
+                appendLine("binary:  ${benchlogBin.absolutePath}")
+                appendLine("exists:  ${benchlogBin.exists()}")
+                appendLine("HOME:    ${homeDir.absolutePath}")
+                appendLine()
+                appendLine("=== run.log ===")
+                appendLine(log)
+                appendLine()
+                appendLine("Tap anywhere to run diagnostics mode.")
+            },
+            onTap = { startTerminal(arrayOf("--diag")) }
+        )
     }
 
-    private fun showError(msg: String) {
-        setContentView(TextView(this).apply {
-            text = msg
-            setTextColor(0xFFff6666.toInt())
-            textSize = 12f
+    private fun showDiag(title: String, body: String, onTap: (() -> Unit)? = null) {
+        val tv = TextView(this).apply {
+            text = "▶ $title\n\n$body"
+            setTextColor(0xFFFF9500.toInt())
+            textSize = 11f
             setPadding(32, 60, 32, 32)
             setBackgroundColor(0xFF000000.toInt())
-        })
+            typeface = android.graphics.Typeface.MONOSPACE
+            if (onTap != null) setOnClickListener { onTap() }
+        }
+        val scroll = ScrollView(this).apply {
+            addView(tv)
+            setBackgroundColor(0xFF000000.toInt())
+        }
+        setContentView(scroll)
     }
 
     override fun onResume() {

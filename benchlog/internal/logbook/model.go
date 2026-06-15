@@ -47,7 +47,7 @@ func (m Model) Init() tea.Cmd {
 	return m.loadDay(m.date)
 }
 
-func (m Model) IsEditing() bool { return true }
+func (m Model) IsEditing() bool { return false }
 
 func (m Model) FooterHint() string {
 	tip := ""
