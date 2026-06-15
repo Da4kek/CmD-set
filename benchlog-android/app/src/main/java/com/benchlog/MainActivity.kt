@@ -134,11 +134,18 @@ class MainActivity : Activity() {
         // Diagnose before attempting to start — show a readable error instead of crashing
         if (!shBin.exists()) {
             val msg = buildString {
-                appendLine("ERROR: shell not found at ${shBin.absolutePath}")
+                appendLine("ERROR: shell not found")
                 appendLine()
                 appendLine("nativeLibraryDir: ${applicationInfo.nativeLibraryDir}")
-                appendLine("libbusybox.so exists: ${busyboxLib.exists()}")
-                appendLine("libbenchlog.so exists: ${benchlogLib.exists()}")
+                appendLine("nativeLibraryDir exists: ${nativeLibDir.exists()}")
+                appendLine("nativeLibraryDir contents:")
+                nativeLibDir.listFiles()?.forEach { appendLine("  ${it.name}") }
+                    ?: appendLine("  (null - directory missing)")
+                appendLine()
+                appendLine("libbusybox.so: ${busyboxLib.exists()}")
+                appendLine("libbenchlog.so: ${benchlogLib.exists()}")
+                appendLine()
+                appendLine("binDir: ${binDir.absolutePath}")
                 appendLine("binDir contents: ${binDir.listFiles()?.map { it.name } ?: "null"}")
             }
             setContentView(TextView(this).apply {

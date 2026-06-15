@@ -27,10 +27,11 @@ jobs:
 
       - name: Build benchlog for Android (linux/arm64 static)
         run: |
+          mkdir -p benchlog-android/app/src/main/jniLibs/arm64-v8a
           cd benchlog
           GOOS=linux GOARCH=arm64 CGO_ENABLED=0 \
             go build -ldflags="-s -w" \
-            -o ../benchlog-android/app/src/main/assets/benchlog .
+            -o ../benchlog-android/app/src/main/jniLibs/arm64-v8a/libbenchlog.so .
 
       # ── Step 2: Get static BusyBox ARM64 from official Docker image ────────
       - name: Set up QEMU (for ARM64 image extraction)
@@ -40,10 +41,9 @@ jobs:
         run: |
           id=$(docker create --platform linux/arm64 busybox:latest)
           docker cp "$id:/bin/busybox" \
-            benchlog-android/app/src/main/assets/busybox
+            benchlog-android/app/src/main/jniLibs/arm64-v8a/libbusybox.so
           docker rm "$id"
-          chmod +x benchlog-android/app/src/main/assets/busybox
-          file benchlog-android/app/src/main/assets/busybox
+          file benchlog-android/app/src/main/jniLibs/arm64-v8a/libbusybox.so
 
       # ── Step 3: Build the APK ─────────────────────────────────────────────
       - uses: actions/setup-java@v4
@@ -62,6 +62,15 @@ jobs:
           gradle wrapper --gradle-version=8.4
           chmod +x gradlew
           ./gradlew assembleDebug
+
+      - name: Verify .so files are in APK
+        run: |
+          APK=benchlog-android/app/build/outputs/apk/debug/app-debug.apk
+          echo "=== lib/ entries in APK ==="
+          unzip -l "$APK" | grep "lib/" || echo "WARNING: no lib/ entries found in APK"
+          echo "=== file types ==="
+          unzip -p "$APK" lib/arm64-v8a/libbusybox.so > /tmp/bb.bin 2>/dev/null && file /tmp/bb.bin || echo "WARNING: libbusybox.so not extractable"
+          unzip -p "$APK" lib/arm64-v8a/libbenchlog.so > /tmp/bl.bin 2>/dev/null && file /tmp/bl.bin || echo "WARNING: libbenchlog.so not extractable"
 
       # ── Step 4: Upload APK to GitHub Release ──────────────────────────────
       - name: Upload APK to release
