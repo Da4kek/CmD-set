@@ -124,7 +124,12 @@ class MainActivity : Activity() {
             ),
             TerminalEmulator.DEFAULT_TERMINAL_TRANSCRIPT_ROWS,
             object : TerminalSessionClient {
-                override fun onTextChanged(s: TerminalSession) = termView.onScreenUpdated()
+                // onTextChanged fires on a background reader thread.
+                // invalidate() is silently dropped off the UI thread, so
+                // we must dispatch onScreenUpdated() back to the main thread.
+                override fun onTextChanged(s: TerminalSession) {
+                    runOnUiThread { if (::termView.isInitialized) termView.onScreenUpdated() }
+                }
                 override fun onTitleChanged(s: TerminalSession) {}
                 override fun onSessionFinished(s: TerminalSession) = runOnUiThread { onExit(s) }
                 override fun onCopyTextToClipboard(s: TerminalSession, text: String) {}
@@ -171,6 +176,8 @@ class MainActivity : Activity() {
 
         termView.attachSession(session)
         termView.requestFocus()
+        // Force a redraw — binary may have already rendered before attachSession was called
+        termView.postInvalidate()
     }
 
     private fun onExit(s: TerminalSession) {
