@@ -21,10 +21,10 @@ class MainActivity : Activity() {
     private lateinit var termView: TerminalView
     private lateinit var session: TerminalSession
 
-    private val benchlogBin by lazy { File(applicationInfo.nativeLibraryDir, "libbenchlog.so") }
-    private val homeDir     by lazy { File(filesDir, "home").also { it.mkdirs() } }
-    private val dataDir     by lazy { File(homeDir, ".benchlog") }
-    private val runLog      by lazy { File(dataDir, "run.log") }
+    private val benchlogBin  by lazy { File(applicationInfo.nativeLibraryDir, "libbenchlog.so") }
+    private val homeDir      by lazy { File(filesDir, "home").also { it.mkdirs() } }
+    private val benchlogDir  by lazy { File(homeDir, ".benchlog") }
+    private val runLog       by lazy { File(benchlogDir, "run.log") }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
