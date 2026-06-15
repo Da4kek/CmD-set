@@ -5,7 +5,6 @@
 
     <application
         android:allowBackup="false"
-        android:icon="@mipmap/ic_launcher"
         android:label="benchlog"
         android:supportsRtl="false"
         android:theme="@style/Theme.Benchlog">
