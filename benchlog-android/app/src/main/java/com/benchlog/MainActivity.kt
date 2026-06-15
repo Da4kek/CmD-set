@@ -2,8 +2,6 @@ package com.benchlog
 
 import android.app.Activity
 import android.os.Bundle
-import android.os.Handler
-import android.os.Looper
 import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.ViewGroup
@@ -16,148 +14,39 @@ import com.termux.terminal.TerminalSessionClient
 import com.termux.view.TerminalView
 import com.termux.view.TerminalViewClient
 import java.io.File
-import java.nio.file.Files
 
 class MainActivity : Activity() {
 
     private lateinit var termView: TerminalView
     private lateinit var session: TerminalSession
 
-    // Android extracts jniLibs/*.so to nativeLibraryDir — always executable
-    private val nativeLibDir by lazy { File(applicationInfo.nativeLibraryDir) }
-    private val busyboxLib  by lazy { File(nativeLibDir, "libbusybox.so") }
-    private val benchlogLib by lazy { File(nativeLibDir, "libbenchlog.so") }
-
-    private val binDir   by lazy { File(filesDir, "bin") }
-    private val homeDir  by lazy { File(filesDir, "home") }
-    private val setupTag by lazy { File(filesDir, ".setup_done") }
-    private val shBin    by lazy { File(binDir, "sh") }
+    // benchlog binary — extracted by Android from jniLibs at install time
+    private val benchlogBin by lazy {
+        File(applicationInfo.nativeLibraryDir, "libbenchlog.so")
+    }
+    private val homeDir by lazy { File(filesDir, "home").also { it.mkdirs() } }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
 
-        if (!setupTag.exists()) {
-            runSetupThenStart()
-        } else {
+        try {
+            if (!benchlogBin.exists()) {
+                showError(
+                    "benchlog binary not found.\n\n" +
+                    "nativeLibraryDir: ${applicationInfo.nativeLibraryDir}\n" +
+                    "exists: ${File(applicationInfo.nativeLibraryDir).exists()}\n" +
+                    "contents: ${File(applicationInfo.nativeLibraryDir).listFiles()?.map { it.name }}"
+                )
+                return
+            }
             startTerminal()
+        } catch (e: Throwable) {
+            showError("Startup error:\n${e.javaClass.simpleName}: ${e.message}")
         }
     }
-
-    // ── First-launch setup ────────────────────────────────────────────────────
-
-    private fun runSetupThenStart() {
-        val tv = TextView(this).apply {
-            text = "Setting up Linux environment…"
-            setTextColor(0xFF88ff88.toInt())
-            textSize = 15f
-            setPadding(48, 80, 48, 40)
-            setBackgroundColor(0xFF000000.toInt())
-        }
-        setContentView(tv)
-
-        val handler = Handler(Looper.getMainLooper())
-
-        Thread {
-            fun progress(msg: String) = handler.post { tv.text = msg }
-            try {
-                progress("Creating directories…")
-                binDir.mkdirs()
-                homeDir.mkdirs()
-
-                progress("Registering Linux commands…")
-                createBusyboxSymlinks()
-
-                progress("Writing shell profile…")
-                writeProfile()
-
-                setupTag.createNewFile()
-                handler.post { startTerminal() }
-
-            } catch (e: Exception) {
-                handler.post {
-                    tv.text = "Setup failed: ${e.message}\n\nReinstall the app to retry."
-                }
-            }
-        }.start()
-    }
-
-    private fun createBusyboxSymlinks() {
-        val applets = listOf(
-            "sh", "ash", "ls", "cat", "grep", "egrep", "fgrep", "find",
-            "sed", "awk", "vi", "wget", "tar", "gzip", "gunzip",
-            "bzip2", "bunzip2", "xz", "unxz", "mkdir", "cp", "mv", "rm",
-            "rmdir", "chmod", "chown", "echo", "printf", "pwd", "env",
-            "date", "time", "which", "head", "tail", "cut", "sort", "uniq",
-            "wc", "diff", "patch", "xargs", "test", "true", "false",
-            "ps", "kill", "top", "du", "df", "free", "uname", "id",
-            "whoami", "hostname", "ping", "nc", "tee", "yes", "sleep",
-            "seq", "expr", "basename", "dirname", "realpath", "readlink",
-            "ln", "stat", "touch", "less", "more", "hexdump", "strings",
-            "base64", "md5sum", "sha256sum", "tr", "nl", "tac", "rev",
-            "fold", "expand", "od", "bc", "timeout", "nohup", "stty"
-        )
-
-        val target = busyboxLib.toPath()
-        for (applet in applets) {
-            val link = File(binDir, applet)
-            if (!link.exists()) {
-                runCatching { Files.createSymbolicLink(link.toPath(), target) }
-            }
-        }
-
-        val benchlogLink = File(binDir, "benchlog")
-        if (!benchlogLink.exists()) {
-            runCatching { Files.createSymbolicLink(benchlogLink.toPath(), benchlogLib.toPath()) }
-        }
-    }
-
-    private fun writeProfile() {
-        File(homeDir, ".profile").writeText(
-            """
-            export HOME=${homeDir.absolutePath}
-            export PATH=${binDir.absolutePath}
-            export TERM=xterm-256color
-            export COLORTERM=truecolor
-            export LANG=en_US.UTF-8
-
-            benchlog
-
-            PS1='$ '
-            """.trimIndent()
-        )
-    }
-
-    // ── Terminal ──────────────────────────────────────────────────────────────
 
     private fun startTerminal() {
-        // Diagnose before attempting to start — show a readable error instead of crashing
-        if (!shBin.exists()) {
-            val msg = buildString {
-                appendLine("ERROR: shell not found")
-                appendLine()
-                appendLine("nativeLibraryDir: ${applicationInfo.nativeLibraryDir}")
-                appendLine("nativeLibraryDir exists: ${nativeLibDir.exists()}")
-                appendLine("nativeLibraryDir contents:")
-                nativeLibDir.listFiles()?.forEach { appendLine("  ${it.name}") }
-                    ?: appendLine("  (null - directory missing)")
-                appendLine()
-                appendLine("libbusybox.so: ${busyboxLib.exists()}")
-                appendLine("libbenchlog.so: ${benchlogLib.exists()}")
-                appendLine()
-                appendLine("binDir: ${binDir.absolutePath}")
-                appendLine("binDir contents: ${binDir.listFiles()?.map { it.name } ?: "null"}")
-            }
-            setContentView(TextView(this).apply {
-                text = msg
-                setTextColor(0xFFff6666.toInt())
-                textSize = 12f
-                setPadding(32, 60, 32, 32)
-                setBackgroundColor(0xFF000000.toInt())
-            })
-            return
-        }
-
         val frame = FrameLayout(this).apply { setBackgroundColor(0xFF000000.toInt()) }
         termView = TerminalView(this, null)
         frame.addView(
@@ -166,19 +55,16 @@ class MainActivity : Activity() {
         )
         setContentView(frame)
 
-        val env = arrayOf(
-            "HOME=${homeDir.absolutePath}",
-            "PATH=${binDir.absolutePath}",
-            "TERM=xterm-256color",
-            "COLORTERM=truecolor",
-            "LANG=en_US.UTF-8",
-        )
-
         session = TerminalSession(
-            shBin.absolutePath,
+            benchlogBin.absolutePath,
             homeDir.absolutePath,
-            arrayOf("-l"),
-            env,
+            emptyArray(),
+            arrayOf(
+                "HOME=${homeDir.absolutePath}",
+                "TERM=xterm-256color",
+                "COLORTERM=truecolor",
+                "LANG=en_US.UTF-8",
+            ),
             TerminalEmulator.DEFAULT_TERMINAL_TRANSCRIPT_ROWS,
             object : TerminalSessionClient {
                 override fun onTextChanged(s: TerminalSession) = termView.onScreenUpdated()
@@ -228,6 +114,16 @@ class MainActivity : Activity() {
 
         termView.attachSession(session)
         termView.requestFocus()
+    }
+
+    private fun showError(msg: String) {
+        setContentView(TextView(this).apply {
+            text = msg
+            setTextColor(0xFFff6666.toInt())
+            textSize = 12f
+            setPadding(32, 60, 32, 32)
+            setBackgroundColor(0xFF000000.toInt())
+        })
     }
 
     override fun onResume() {

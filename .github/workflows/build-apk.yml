@@ -32,21 +32,9 @@ jobs:
           GOOS=linux GOARCH=arm64 CGO_ENABLED=0 \
             go build -ldflags="-s -w" \
             -o ../benchlog-android/app/src/main/jniLibs/arm64-v8a/libbenchlog.so .
+          file ../benchlog-android/app/src/main/jniLibs/arm64-v8a/libbenchlog.so
 
-      # ── Step 2: Get static BusyBox ARM64 from official Docker image ────────
-      - name: Set up QEMU (for ARM64 image extraction)
-        uses: docker/setup-qemu-action@v3
-
-      - name: Get truly static BusyBox ARM64 (Alpine busybox-static package)
-        run: |
-          # busybox-static is Alpine's fully self-contained variant — no dynamic linker
-          docker run --platform linux/arm64 --rm \
-            -v "${{ github.workspace }}/benchlog-android/app/src/main/jniLibs/arm64-v8a":/out \
-            alpine:latest \
-            sh -c "apk add --no-cache busybox-static && cp /bin/busybox.static /out/libbusybox.so"
-          file benchlog-android/app/src/main/jniLibs/arm64-v8a/libbusybox.so
-
-      # ── Step 3: Build the APK ─────────────────────────────────────────────
+      # ── Step 2: Build the APK ─────────────────────────────────────────────
       - uses: actions/setup-java@v4
         with:
           java-version: "17"
@@ -64,14 +52,16 @@ jobs:
           chmod +x gradlew
           ./gradlew assembleDebug
 
-      - name: Verify .so files are in APK
+      # ── Step 3: Verify APK contents ───────────────────────────────────────
+      - name: Verify .so files in APK
         run: |
           APK=benchlog-android/app/build/outputs/apk/debug/app-debug.apk
           echo "=== lib/ entries in APK ==="
-          unzip -l "$APK" | grep "lib/" || echo "WARNING: no lib/ entries found in APK"
-          echo "=== file types ==="
-          unzip -p "$APK" lib/arm64-v8a/libbusybox.so > /tmp/bb.bin 2>/dev/null && file /tmp/bb.bin || echo "WARNING: libbusybox.so not extractable"
-          unzip -p "$APK" lib/arm64-v8a/libbenchlog.so > /tmp/bl.bin 2>/dev/null && file /tmp/bl.bin || echo "WARNING: libbenchlog.so not extractable"
+          unzip -l "$APK" | grep "lib/" || echo "WARNING: no lib/ entries"
+          echo "=== libbenchlog.so file type ==="
+          unzip -p "$APK" lib/arm64-v8a/libbenchlog.so > /tmp/bl.bin 2>/dev/null \
+            && file /tmp/bl.bin \
+            || echo "WARNING: libbenchlog.so not extractable from APK"
 
       # ── Step 4: Upload APK to GitHub Release ──────────────────────────────
       - name: Upload APK to release

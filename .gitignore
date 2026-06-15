@@ -10,7 +10,6 @@ benchlog-android/local.properties
 benchlog-android/gradlew
 benchlog-android/gradlew.bat
 benchlog-android/gradle/wrapper/gradle-wrapper.jar
-benchlog-android/app/src/main/assets/benchlog
-benchlog-android/app/src/main/assets/busybox
+benchlog-android/app/src/main/jniLibs/
 *.keystore
 *.jks

@@ -41,8 +41,15 @@ jobs:
       - name: Build Windows installer
         run: |
           VERSION=${GITHUB_REF_NAME#v}
+
+          # Build benchlog.exe for Windows
           GOOS=windows GOARCH=amd64 CGO_ENABLED=0 \
             go build -ldflags="-s -w" -o benchlog.exe .
+
+          # Download BusyBox for Windows (static binary, no install needed)
+          curl -fsSL "https://frippery.org/files/busybox/busybox64.exe" -o busybox64.exe
+
+          # Build installer (bundles both binaries + creates shell launcher)
           makensis -DVERSION=$VERSION installer.nsi
           gh release upload $GITHUB_REF_NAME "benchlog-${VERSION}-setup.exe" --clobber
         env:
