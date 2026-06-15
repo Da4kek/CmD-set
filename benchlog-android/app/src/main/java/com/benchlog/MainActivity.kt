@@ -26,7 +26,7 @@ class MainActivity : Activity() {
     // Executable copy in filesDir — Android guarantees apps can exec from here
     private val execBin  by lazy { File(filesDir, "benchlog") }
     private val homeDir  by lazy { File(filesDir, "home").also { it.mkdirs() } }
-    private val runLog   by lazy { File(homeDir, ".benchlog", "run.log") }
+    private val runLog   by lazy { File(File(homeDir, ".benchlog"), "run.log") }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)

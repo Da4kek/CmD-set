@@ -26,6 +26,15 @@ const (
 	viewLog
 )
 
+// tickMsg drives 500ms animation frames.
+type tickMsg time.Time
+
+func doTick() tea.Cmd {
+	return tea.Tick(500*time.Millisecond, func(t time.Time) tea.Msg {
+		return tickMsg(t)
+	})
+}
+
 type Model struct {
 	active    view
 	notes     notes.Model
@@ -35,6 +44,9 @@ type Model struct {
 	width     int
 	height    int
 	ready     bool
+	tick      int  // monotonic frame counter
+	blink     bool // toggles every tick — drives cursor and pulse effects
+	tabFlash  int  // counts down after a tab switch for the neon flash
 }
 
 func dataDir() string {
@@ -59,11 +71,20 @@ func (m Model) Init() tea.Cmd {
 		m.refs.Init(),
 		m.bookmarks.Init(),
 		m.log.Init(),
+		doTick(),
 	)
 }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case tickMsg:
+		m.tick++
+		m.blink = !m.blink
+		if m.tabFlash > 0 {
+			m.tabFlash--
+		}
+		return m, doTick()
+
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
@@ -89,23 +110,27 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, tea.Quit
 			}
 		case "1":
-			if !m.anyEditing() {
+			if !m.anyEditing() && m.active != viewNotes {
 				m.active = viewNotes
+				m.tabFlash = 4
 				return m, nil
 			}
 		case "2":
-			if !m.anyEditing() {
+			if !m.anyEditing() && m.active != viewRefs {
 				m.active = viewRefs
+				m.tabFlash = 4
 				return m, nil
 			}
 		case "3":
-			if !m.anyEditing() {
+			if !m.anyEditing() && m.active != viewBookmarks {
 				m.active = viewBookmarks
+				m.tabFlash = 4
 				return m, nil
 			}
 		case "4":
-			if !m.anyEditing() {
+			if !m.anyEditing() && m.active != viewLog {
 				m.active = viewLog
+				m.tabFlash = 4
 				return m, nil
 			}
 		}
@@ -161,42 +186,91 @@ func (m Model) View() string {
 	return fmt.Sprintf("%s\n%s\n%s", header, body, footer)
 }
 
-func (m Model) header() string {
-	logo := ui.TitleStyle.Render("◉ benchlog")
+// ── Tab definitions ────────────────────────────────────────────────────────────
 
-	tabs := []struct {
-		key   string
-		label string
-		view  view
-	}{
-		{"1", "notes", viewNotes},
-		{"2", "refs", viewRefs},
-		{"3", "bookmarks", viewBookmarks},
-		{"4", "log", viewLog},
-	}
+var tabDefs = []struct {
+	key   string
+	label string
+	id    view
+}{
+	{"1", "NOTES", viewNotes},
+	{"2", "REFS", viewRefs},
+	{"3", "BKMRK", viewBookmarks},
+	{"4", "LOG", viewLog},
+}
 
-	var tabParts []string
-	for _, t := range tabs {
-		label := t.key + " " + t.label
-		if m.active == t.view {
-			tabParts = append(tabParts, ui.ActiveTabStyle.Render(label))
-		} else {
-			tabParts = append(tabParts, ui.InactiveTabStyle.Render(label))
+// ── Glitch effect ──────────────────────────────────────────────────────────────
+
+var glitchPairs = [][2]rune{
+	{'E', '3'}, {'N', '╬'}, {'H', '#'}, {'L', '|'}, {'O', '0'}, {'G', '6'},
+}
+
+// glitchStr replaces the first two glitchable chars — fires for one 500ms
+// frame every ~6 seconds to give the logo a brief data-corruption flicker.
+func glitchStr(s string) string {
+	r := []rune(s)
+	applied := 0
+	for i := range r {
+		for _, pair := range glitchPairs {
+			if r[i] == pair[0] {
+				r[i] = pair[1]
+				applied++
+				break
+			}
+		}
+		if applied >= 2 {
+			break
 		}
 	}
-	tabBar := strings.Join(tabParts, ui.DimStyle.Render("│"))
+	return string(r)
+}
+
+// ── Header ─────────────────────────────────────────────────────────────────────
+
+func (m Model) header() string {
+	// Logo: glitches for exactly one frame every ~6 seconds
+	logoText := "◉ BENCHLOG"
+	if m.tick%12 == 1 {
+		logoText = glitchStr(logoText)
+	}
+	// Blinking block cursor after logo — pulses while app is alive
+	cursor := " "
+	if m.blink {
+		cursor = ui.AmberDimStyle.Render("█")
+	}
+	logo := ui.TitleStyle.Render(logoText) + cursor
+
+	// Tab bar — active tab flashes neon green for 2s after switching
+	var tabParts []string
+	for _, t := range tabDefs {
+		if m.active == t.id {
+			label := "▸ " + t.key + ":" + t.label + " ◂"
+			if m.tabFlash > 0 {
+				tabParts = append(tabParts, ui.FlashTabStyle.Render(label))
+			} else {
+				tabParts = append(tabParts, ui.ActiveTabStyle.Render(label))
+			}
+		} else {
+			tabParts = append(tabParts,
+				ui.InactiveTabStyle.Render(" "+t.key+":"+strings.ToLower(t.label)+" "))
+		}
+	}
+	tabBar := strings.Join(tabParts, ui.DimStyle.Render("·"))
 
 	clock := ui.DimStyle.Render(time.Now().Format("15:04"))
 
-	used := lipgloss.Width(logo) + 2 + lipgloss.Width(tabBar) + 2 + lipgloss.Width(clock)
+	used := lipgloss.Width(logo) + 2 +
+		lipgloss.Width(tabBar) + 2 +
+		lipgloss.Width(clock)
 	gap := strings.Repeat(" ", max(0, m.width-used))
 
 	top := lipgloss.JoinHorizontal(lipgloss.Top,
 		logo, "  ", tabBar, gap, clock, " ")
 
-	sep := ui.Sep(m.width)
-	return top + "\n" + sep
+	return top + "\n" + ui.Sep(m.width)
 }
+
+// ── Footer ─────────────────────────────────────────────────────────────────────
 
 func (m Model) footer() string {
 	var hint string
