@@ -69,7 +69,7 @@ class MainActivity : Activity() {
             object : TerminalSessionClient {
                 override fun onTextChanged(s: TerminalSession) = termView.onScreenUpdated()
                 override fun onTitleChanged(s: TerminalSession) {}
-                override fun onSessionFinished(s: TerminalSession) = finish()
+                override fun onSessionFinished(s: TerminalSession) = runOnUiThread { restartOrShowError(s) }
                 override fun onCopyTextToClipboard(s: TerminalSession, text: String) {}
                 override fun onPasteTextFromClipboard(s: TerminalSession?) {}
                 override fun onBell(s: TerminalSession) {}
@@ -114,6 +114,28 @@ class MainActivity : Activity() {
 
         termView.attachSession(session)
         termView.requestFocus()
+    }
+
+    private fun restartOrShowError(s: TerminalSession) {
+        // Keep the terminal visible so any crash output is readable.
+        // Overlay a dim restart banner at the bottom.
+        val exitCode = s.exitStatus
+        val banner = android.widget.TextView(this).apply {
+            text = if (exitCode == 0) "benchlog exited — tap to restart"
+                   else "benchlog crashed (exit $exitCode) — tap to restart"
+            setTextColor(if (exitCode == 0) 0xFF00FF9F.toInt() else 0xFFFF453A.toInt())
+            textSize = 13f
+            setPadding(32, 20, 32, 20)
+            setBackgroundColor(0xDD000000.toInt())
+            gravity = android.view.Gravity.CENTER
+            setOnClickListener { startTerminal() }
+        }
+        val root = window.decorView.findViewById<android.widget.FrameLayout>(android.R.id.content)
+        root.addView(banner, android.widget.FrameLayout.LayoutParams(
+            android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
+            android.widget.FrameLayout.LayoutParams.WRAP_CONTENT,
+            android.view.Gravity.BOTTOM
+        ))
     }
 
     private fun showError(msg: String) {

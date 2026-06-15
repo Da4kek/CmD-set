@@ -1,38 +1,96 @@
 package ui
 
-import "github.com/charmbracelet/lipgloss"
+import (
+	"strings"
+
+	"github.com/charmbracelet/lipgloss"
+)
+
+// Retro cyberpunk amber palette
+const (
+	Amber    = lipgloss.Color("#FF9500")
+	AmberDim = lipgloss.Color("#7A4700")
+	AmberBg  = lipgloss.Color("#1A0E00") // very dark amber tint for selected bg
+	Neon     = lipgloss.Color("#00FF9F")
+	Pink     = lipgloss.Color("#FF2D78")
+	Cyan     = lipgloss.Color("#00D4FF")
+	Red      = lipgloss.Color("#FF453A")
+	Yellow   = lipgloss.Color("#FFE600")
+	Muted    = lipgloss.Color("#484848")
+	Muted2   = lipgloss.Color("#2E2E2E")
+	TextMain = lipgloss.Color("#E0D5C0")
+	Black    = lipgloss.Color("#000000")
+)
 
 var (
 	TitleStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#FAFAFA")).
-			Background(lipgloss.Color("#7D56F4")).
 			Bold(true).
-			Padding(0, 1)
+			Foreground(Amber)
 
 	ActiveTabStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#7D56F4")).
 			Bold(true).
-			Padding(0, 2)
-
-	InactiveTabStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("#888888")).
-				Padding(0, 2)
-
-	StatusBarStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.AdaptiveColor{Light: "#343433", Dark: "#C1C6B2"}).
-			Background(lipgloss.AdaptiveColor{Light: "#D9DCCF", Dark: "#353533"})
-
-	SelectedItemStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("#7D56F4")).
-				Bold(true)
-
-	NormalItemStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.AdaptiveColor{Light: "#1A1A1A", Dark: "#DDDDDD"})
-
-	TagStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#43BF6D")).
+			Foreground(Black).
+			Background(Amber).
 			Padding(0, 1)
 
+	InactiveTabStyle = lipgloss.NewStyle().
+				Foreground(Muted).
+				Padding(0, 1)
+
+	StatusBarStyle = lipgloss.NewStyle().
+			Background(Muted2).
+			Foreground(Muted).
+			Padding(0, 1)
+
+	SelectedItemStyle = lipgloss.NewStyle().
+				Bold(true).
+				Foreground(Amber)
+
+	NormalItemStyle = lipgloss.NewStyle().
+			Foreground(TextMain)
+
+	TagStyle = lipgloss.NewStyle().
+			Foreground(Neon)
+
 	DimStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#555555"))
+			Foreground(Muted)
+
+	AccentStyle = lipgloss.NewStyle().
+			Foreground(Cyan)
+
+	ErrorStyle = lipgloss.NewStyle().
+			Foreground(Red)
+
+	SuccessStyle = lipgloss.NewStyle().
+			Foreground(Neon)
+
+	WarnStyle = lipgloss.NewStyle().
+			Foreground(Yellow)
+
+	PinkStyle = lipgloss.NewStyle().
+			Foreground(Pink)
+
+	ActiveFieldStyle = lipgloss.NewStyle().
+				Bold(true).
+				Foreground(Black).
+				Background(Amber).
+				Padding(0, 1)
+
+	SepStyle = lipgloss.NewStyle().
+			Foreground(Muted2)
 )
+
+func Sep(width int) string {
+	if width <= 0 {
+		return ""
+	}
+	return SepStyle.Render(strings.Repeat("─", width))
+}
+
+func FieldLabel(name string, active bool) string {
+	padded := "  " + name + " "
+	if active {
+		return ActiveFieldStyle.Render(padded)
+	}
+	return DimStyle.Render(padded)
+}

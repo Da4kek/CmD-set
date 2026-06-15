@@ -490,7 +490,13 @@ func (m Model) viewList() string {
 		if note.Folder != "" && m.activeFolder == "" {
 			folder = ui.DimStyle.Render("["+note.Folder+"] ")
 		}
-		line := fmt.Sprintf("  %s  %s  %s%-40s %s", date, status, folder, truncate(note.Title, 40), tags)
+		tasks := taskCount(note.Body)
+		taskStr := ""
+		if tasks.total > 0 {
+			taskStr = ui.DimStyle.Render(fmt.Sprintf(" ☑ %d/%d", tasks.done, tasks.total))
+		}
+		line := fmt.Sprintf("  %s  %s  %s%-38s %s%s",
+			date, status, folder, truncate(note.Title, 38), tags, taskStr)
 		if i == m.cursor {
 			b.WriteString(ui.SelectedItemStyle.Render("▶" + line))
 		} else {
@@ -531,11 +537,7 @@ func (m Model) viewEditor() string {
 }
 
 func fieldLabel(name string, active bool) string {
-	label := fmt.Sprintf("  %-8s ", name)
-	if active {
-		return ui.ActiveTabStyle.Render(label)
-	}
-	return ui.DimStyle.Render(label)
+	return ui.FieldLabel(fmt.Sprintf("%-6s", name), active)
 }
 
 func (m Model) viewDelete() string {
@@ -734,11 +736,11 @@ func extractFolders(notes []Note) []string {
 func statusIcon(s Status) string {
 	switch s {
 	case StatusOngoing:
-		return lipgloss.NewStyle().Foreground(lipgloss.Color("#F0C040")).Render("●")
+		return lipgloss.NewStyle().Foreground(ui.Yellow).Render("▸")
 	case StatusDone:
-		return lipgloss.NewStyle().Foreground(lipgloss.Color("#73F59F")).Render("✓")
+		return lipgloss.NewStyle().Foreground(ui.Neon).Render("✔")
 	case StatusAbandoned:
-		return lipgloss.NewStyle().Foreground(lipgloss.Color("#FF6B6B")).Render("✗")
+		return lipgloss.NewStyle().Foreground(ui.Red).Render("✖")
 	}
 	return "○"
 }
@@ -749,6 +751,23 @@ func renderTags(tags []string) string {
 		parts = append(parts, ui.TagStyle.Render("#"+t))
 	}
 	return strings.Join(parts, " ")
+}
+
+type tasks struct{ done, total int }
+
+func taskCount(body string) tasks {
+	var t tasks
+	for _, line := range strings.Split(body, "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "- [ ]") || strings.HasPrefix(line, "* [ ]") {
+			t.total++
+		} else if strings.HasPrefix(line, "- [x]") || strings.HasPrefix(line, "- [X]") ||
+			strings.HasPrefix(line, "* [x]") || strings.HasPrefix(line, "* [X]") {
+			t.total++
+			t.done++
+		}
+	}
+	return t
 }
 
 func truncate(s string, n int) string {
