@@ -1,4 +1,4 @@
-package in.myrai.benchlog
+package `in`.myrai.benchlog
 
 import android.app.Activity
 import android.os.Bundle
@@ -161,7 +161,7 @@ class MainActivity : Activity() {
         )
 
         termView.setTerminalViewClient(object : TerminalViewClient {
-            override fun onScroll() = false
+            override fun onScale(scale: Float): Float = 1f
             override fun onLongPress(event: MotionEvent) = false
             override fun readControlKey() = false
             override fun readAltKey() = false
