@@ -22,22 +22,20 @@ class MainActivity : Activity() {
     private lateinit var termView: TerminalView
     private lateinit var session: TerminalSession
 
-    // Source binary — installed by Android's package manager into nativeLibraryDir
-    private val nativeLib by lazy { File(applicationInfo.nativeLibraryDir, "libbenchlog.so") }
-    // Executable copy in filesDir — Android allows exec from here (Termux pattern)
-    private val execBin  by lazy { File(filesDir, "benchlog") }
-    private val homeDir  by lazy { File(filesDir, "home").also { it.mkdirs() } }
-    private val runLog   by lazy { File(File(homeDir, ".benchlog"), "run.log") }
+    // The binary lives in nativeLibraryDir (apk_data_file SELinux type).
+    // Android allows exec from here even on API 29+ W^X policy because
+    // the package manager owns this directory — apps cannot write to it.
+    // filesDir (app_data_file) is writable by the app, so exec is blocked.
+    private val binary  by lazy { File(applicationInfo.nativeLibraryDir, "libbenchlog.so") }
+    private val homeDir by lazy { File(filesDir, "home").also { it.mkdirs() } }
+    private val runLog  by lazy { File(File(homeDir, ".benchlog"), "run.log") }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
 
-        // Catch any exception that escapes the UI thread (background threads, etc.)
         Thread.setDefaultUncaughtExceptionHandler { thread, t ->
-            runOnUiThread {
-                showDiag("Uncaught exception (${thread.name})", t.stackTraceToString())
-            }
+            runOnUiThread { showDiag("Uncaught exception (${thread.name})", t.stackTraceToString()) }
         }
 
         try {
@@ -48,39 +46,33 @@ class MainActivity : Activity() {
     }
 
     private fun setup() {
-        // ── Step 1: verify source binary exists ───────────────────────────────
-        if (!nativeLib.exists()) {
+        // ── Step 1: verify binary was extracted from APK ──────────────────────
+        if (!binary.exists()) {
             val dir = File(applicationInfo.nativeLibraryDir)
             showDiag(
-                "libbenchlog.so not found in nativeLibraryDir",
+                "libbenchlog.so not found",
                 "nativeLibraryDir = ${dir.absolutePath}\n" +
                 "dir exists        = ${dir.exists()}\n" +
                 "contents          = ${dir.listFiles()?.joinToString { it.name } ?: "(empty)"}\n\n" +
-                "The .so was not extracted from the APK. Check useLegacyPackaging=true " +
-                "in build.gradle and android:extractNativeLibs=\"true\" in the manifest."
+                "Check useLegacyPackaging=true in build.gradle and " +
+                "android:extractNativeLibs=\"true\" in the manifest."
             )
             return
         }
 
-        // ── Step 2: copy to filesDir + chmod +x ───────────────────────────────
-        val copyErr = tryCopy()
-        if (copyErr != null) {
-            showDiag("Copy to filesDir failed", copyErr)
-            return
-        }
-
-        // ── Step 3: pre-flight exec test (ProcessBuilder, no PTY) ─────────────
-        // Separates "binary can't exec" from "Termux terminal fails to launch"
+        // ── Step 2: pre-flight exec test ──────────────────────────────────────
+        // nativeLibraryDir has SELinux type apk_data_file — exec is allowed.
+        // If this fails, something unusual is blocking exec on this ROM.
         val execErr = testExec()
         if (execErr != null) {
             showDiag(
-                "Binary cannot be executed",
-                "exec path: ${execBin.absolutePath}\n" +
-                "canExecute: ${execBin.canExecute()}\n" +
-                "size: ${execBin.length()} bytes\n\n" +
+                "Binary cannot be executed from nativeLibraryDir",
+                "path:  ${binary.absolutePath}\n" +
+                "size:  ${binary.length()} bytes\n\n" +
                 "Error: $execErr\n\n" +
-                "This usually means SELinux or the filesystem noexec flag is " +
-                "blocking exec from filesDir on this ROM."
+                "apk_data_file exec is normally allowed on all Android versions.\n" +
+                "This ROM may have a non-standard SELinux policy. Check adb logcat\n" +
+                "for an 'avc: denied' line to confirm."
             )
             return
         }
@@ -89,24 +81,11 @@ class MainActivity : Activity() {
         startTerminal()
     }
 
-    private fun tryCopy(): String? {
-        return try {
-            if (!execBin.exists() || execBin.length() != nativeLib.length()) {
-                nativeLib.copyTo(execBin, overwrite = true)
-            }
-            execBin.setExecutable(true, false)
-            execBin.setReadable(true, false)
-            if (!execBin.canExecute()) "setExecutable returned false — filesystem may not support +x" else null
-        } catch (e: Exception) {
-            "Exception during copy: ${e.message}"
-        }
-    }
-
-    // Runs the binary once via ProcessBuilder (no PTY) to confirm execve() works.
-    // Returns null on success, error string on failure.
+    // Test whether the binary can actually be exec'd before handing control to
+    // Termux's JNI layer. Uses ProcessBuilder (plain fork+exec, no PTY).
     private fun testExec(): String? {
         return try {
-            val p = ProcessBuilder(execBin.absolutePath, "--ping")
+            val p = ProcessBuilder(binary.absolutePath, "--ping")
                 .directory(homeDir)
                 .apply {
                     environment().apply {
@@ -117,10 +96,9 @@ class MainActivity : Activity() {
                 }
                 .redirectErrorStream(true)
                 .start()
-            // --ping exits immediately with code 0; give it 5s to be safe
             val finished = p.waitFor(5, TimeUnit.SECONDS)
             if (!finished) p.destroyForcibly()
-            null // exec succeeded (any exit code is fine)
+            null
         } catch (e: Exception) {
             e.message ?: e.javaClass.name
         }
@@ -134,7 +112,7 @@ class MainActivity : Activity() {
         setContentView(frame)
 
         session = TerminalSession(
-            execBin.absolutePath,
+            binary.absolutePath,
             homeDir.absolutePath,
             args,
             arrayOf(
@@ -199,15 +177,14 @@ class MainActivity : Activity() {
         val exit = s.exitStatus
         val log = runLog.takeIf { it.exists() }?.readText()
             ?: "run.log not created — Go main() was never reached.\n" +
-               "execve() succeeded (pre-flight passed) but the process exited before writing the log.\n" +
-               "Possible causes: signal crash (SIGSEGV/SIGBUS), missing syscall on this Android version."
+               "execve() may have been denied, or the binary crashed before writing the log.\n" +
+               "Check adb logcat for 'avc: denied' or signal crash info."
 
         showDiag(
             "exited with code $exit",
             buildString {
-                appendLine("binary:   ${execBin.absolutePath}")
-                appendLine("size:     ${execBin.length()} bytes")
-                appendLine("canExec:  ${execBin.canExecute()}")
+                appendLine("binary:  ${binary.absolutePath}")
+                appendLine("size:    ${binary.length()} bytes")
                 appendLine()
                 appendLine("=== run.log ===")
                 append(log)
