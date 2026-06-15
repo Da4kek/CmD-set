@@ -24,6 +24,9 @@ func main() {
 		case "--diag":
 			runDiag()
 			return
+		case "--ping":
+			fmt.Println("pong")
+			return
 		}
 	}
 
