@@ -1,0 +1,9 @@
+.gradle/
+build/
+app/build/
+local.properties
+*.keystore
+*.jks
+
+# Binary injected at build time — never commit
+app/src/main/assets/benchlog

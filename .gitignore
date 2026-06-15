@@ -1,0 +1,16 @@
+# Go
+benchlog/dist/
+benchlog/*.exe
+
+# Android
+benchlog-android/.gradle/
+benchlog-android/build/
+benchlog-android/app/build/
+benchlog-android/local.properties
+benchlog-android/gradlew
+benchlog-android/gradlew.bat
+benchlog-android/gradle/wrapper/gradle-wrapper.jar
+benchlog-android/app/src/main/assets/benchlog
+benchlog-android/app/src/main/assets/busybox
+*.keystore
+*.jks

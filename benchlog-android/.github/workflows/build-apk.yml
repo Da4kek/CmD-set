@@ -1,0 +1,80 @@
+name: Build Android APK
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # ── Step 1: Build benchlog ARM64 binary ────────────────────────────────
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+          cache: true
+          cache-dependency-path: benchlog/go.sum
+
+      - name: Build benchlog for Android (linux/arm64 static)
+        run: |
+          cd benchlog
+          GOOS=linux GOARCH=arm64 CGO_ENABLED=0 \
+            go build -ldflags="-s -w" \
+            -o ../benchlog-android/app/src/main/assets/benchlog .
+
+      # ── Step 2: Get static BusyBox ARM64 from official Docker image ────────
+      - name: Set up QEMU (for ARM64 image extraction)
+        uses: docker/setup-qemu-action@v3
+
+      - name: Extract BusyBox ARM64 static binary
+        run: |
+          id=$(docker create --platform linux/arm64 busybox:latest)
+          docker cp "$id:/bin/busybox" \
+            benchlog-android/app/src/main/assets/busybox
+          docker rm "$id"
+          chmod +x benchlog-android/app/src/main/assets/busybox
+          # Verify it's actually an ARM64 ELF
+          file benchlog-android/app/src/main/assets/busybox
+
+      # ── Step 3: Build the APK ─────────────────────────────────────────────
+      - uses: actions/setup-java@v4
+        with:
+          java-version: "17"
+          distribution: "temurin"
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v3
+        with:
+          gradle-version: "8.4"
+
+      - name: Generate Gradle wrapper
+        run: |
+          cd benchlog-android
+          gradle wrapper --gradle-version=8.4
+
+      - name: Build debug APK
+        run: |
+          cd benchlog-android
+          chmod +x gradlew
+          ./gradlew assembleDebug
+
+      # ── Step 4: Upload APK to GitHub Release ──────────────────────────────
+      - name: Upload APK to release
+        run: |
+          VERSION=${GITHUB_REF_NAME#v}
+          cp benchlog-android/app/build/outputs/apk/debug/app-debug.apk \
+             "benchlog-android-${VERSION}.apk"
+          gh release upload "$GITHUB_REF_NAME" \
+            "benchlog-android-${VERSION}.apk" --clobber
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
