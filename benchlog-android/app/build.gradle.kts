@@ -4,11 +4,11 @@ plugins {
 }
 
 android {
-    namespace = "in.myrai.benchlog"
+    namespace = "com.benchlog"
     compileSdk = 34
 
     defaultConfig {
-        applicationId = "in.myrai.benchlog"
+        applicationId = "com.benchlog"
         minSdk = 24
         targetSdk = 34
         versionCode = 1
@@ -24,9 +24,6 @@ android {
             isMinifyEnabled = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"))
         }
-        debug {
-            applicationIdSuffix = ".debug"
-        }
     }
 
     compileOptions {
@@ -38,8 +35,9 @@ android {
         jvmTarget = "17"
     }
 
-    androidResources {
-        noCompress += ""
+    // JNI libs are extracted by Android to nativeLibraryDir (executable partition)
+    packaging {
+        jniLibs { useLegacyPackaging = false }
     }
 }
 

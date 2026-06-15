@@ -1,4 +1,4 @@
-package `in`.myrai.benchlog
+package com.benchlog
 
 import android.app.Activity
 import android.os.Bundle
@@ -23,11 +23,15 @@ class MainActivity : Activity() {
     private lateinit var termView: TerminalView
     private lateinit var session: TerminalSession
 
+    // Android extracts jniLibs/*.so to nativeLibraryDir — always executable
+    private val nativeLibDir by lazy { File(applicationInfo.nativeLibraryDir) }
+    private val busyboxLib  by lazy { File(nativeLibDir, "libbusybox.so") }
+    private val benchlogLib by lazy { File(nativeLibDir, "libbenchlog.so") }
+
     private val binDir   by lazy { File(filesDir, "bin") }
     private val homeDir  by lazy { File(filesDir, "home") }
-    private val busybox  by lazy { File(binDir, "busybox") }
-    private val shBin    by lazy { File(binDir, "sh") }
     private val setupTag by lazy { File(filesDir, ".setup_done") }
+    private val shBin    by lazy { File(binDir, "sh") }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -36,8 +40,6 @@ class MainActivity : Activity() {
         if (!setupTag.exists()) {
             runSetupThenStart()
         } else {
-            // Refresh benchlog binary on every launch so APK updates take effect
-            copyAsset("benchlog", File(binDir, "benchlog"))
             startTerminal()
         }
     }
@@ -63,23 +65,8 @@ class MainActivity : Activity() {
                 binDir.mkdirs()
                 homeDir.mkdirs()
 
-                progress("Installing BusyBox (Linux commands)…")
-                copyAsset("busybox", busybox)
-
-                // Install all BusyBox applets as symlinks: ls, grep, vi, wget, tar, awk, sed…
                 progress("Registering Linux commands…")
-                ProcessBuilder(busybox.absolutePath, "--install", "-s", binDir.absolutePath)
-                    .directory(filesDir)
-                    .start()
-                    .waitFor()
-
-                // Fallback: create sh symlink manually if --install didn't get it
-                if (!shBin.exists()) {
-                    Files.createSymbolicLink(shBin.toPath(), busybox.toPath())
-                }
-
-                progress("Installing benchlog…")
-                copyAsset("benchlog", File(binDir, "benchlog"))
+                createBusyboxSymlinks()
 
                 progress("Writing shell profile…")
                 writeProfile()
@@ -95,8 +82,37 @@ class MainActivity : Activity() {
         }.start()
     }
 
+    private fun createBusyboxSymlinks() {
+        val applets = listOf(
+            "sh", "ash", "ls", "cat", "grep", "egrep", "fgrep", "find",
+            "sed", "awk", "vi", "wget", "tar", "gzip", "gunzip",
+            "bzip2", "bunzip2", "xz", "unxz", "mkdir", "cp", "mv", "rm",
+            "rmdir", "chmod", "chown", "echo", "printf", "pwd", "env",
+            "date", "time", "which", "head", "tail", "cut", "sort", "uniq",
+            "wc", "diff", "patch", "xargs", "test", "true", "false",
+            "ps", "kill", "top", "du", "df", "free", "uname", "id",
+            "whoami", "hostname", "ping", "nc", "tee", "yes", "sleep",
+            "seq", "expr", "basename", "dirname", "realpath", "readlink",
+            "ln", "stat", "touch", "less", "more", "hexdump", "strings",
+            "base64", "md5sum", "sha256sum", "tr", "nl", "tac", "rev",
+            "fold", "expand", "od", "bc", "timeout", "nohup", "stty"
+        )
+
+        val target = busyboxLib.toPath()
+        for (applet in applets) {
+            val link = File(binDir, applet)
+            if (!link.exists()) {
+                runCatching { Files.createSymbolicLink(link.toPath(), target) }
+            }
+        }
+
+        val benchlogLink = File(binDir, "benchlog")
+        if (!benchlogLink.exists()) {
+            runCatching { Files.createSymbolicLink(benchlogLink.toPath(), benchlogLib.toPath()) }
+        }
+    }
+
     private fun writeProfile() {
-        // .profile is sourced by 'sh -l' — auto-launches benchlog, then drops to shell
         File(homeDir, ".profile").writeText(
             """
             export HOME=${homeDir.absolutePath}
@@ -105,10 +121,8 @@ class MainActivity : Activity() {
             export COLORTERM=truecolor
             export LANG=en_US.UTF-8
 
-            # Auto-launch benchlog; pressing q drops you back here
             benchlog
 
-            # Shell prompt after benchlog exits
             PS1='$ '
             """.trimIndent()
         )
@@ -133,7 +147,6 @@ class MainActivity : Activity() {
             "LANG=en_US.UTF-8",
         )
 
-        // Run BusyBox sh as a login shell — reads $HOME/.profile on startup
         session = TerminalSession(
             shBin.absolutePath,
             homeDir.absolutePath,
@@ -188,13 +201,6 @@ class MainActivity : Activity() {
 
         termView.attachSession(session)
         termView.requestFocus()
-    }
-
-    // ── Helpers ───────────────────────────────────────────────────────────────
-
-    private fun copyAsset(name: String, dest: File) {
-        assets.open(name).use { src -> dest.outputStream().use { src.copyTo(it) } }
-        dest.setExecutable(true, false)
     }
 
     override fun onResume() {
