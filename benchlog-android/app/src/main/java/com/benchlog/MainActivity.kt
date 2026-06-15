@@ -131,6 +131,26 @@ class MainActivity : Activity() {
     // ── Terminal ──────────────────────────────────────────────────────────────
 
     private fun startTerminal() {
+        // Diagnose before attempting to start — show a readable error instead of crashing
+        if (!shBin.exists()) {
+            val msg = buildString {
+                appendLine("ERROR: shell not found at ${shBin.absolutePath}")
+                appendLine()
+                appendLine("nativeLibraryDir: ${applicationInfo.nativeLibraryDir}")
+                appendLine("libbusybox.so exists: ${busyboxLib.exists()}")
+                appendLine("libbenchlog.so exists: ${benchlogLib.exists()}")
+                appendLine("binDir contents: ${binDir.listFiles()?.map { it.name } ?: "null"}")
+            }
+            setContentView(TextView(this).apply {
+                text = msg
+                setTextColor(0xFFff6666.toInt())
+                textSize = 12f
+                setPadding(32, 60, 32, 32)
+                setBackgroundColor(0xFF000000.toInt())
+            })
+            return
+        }
+
         val frame = FrameLayout(this).apply { setBackgroundColor(0xFF000000.toInt()) }
         termView = TerminalView(this, null)
         frame.addView(

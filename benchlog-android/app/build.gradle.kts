@@ -35,9 +35,10 @@ android {
         jvmTarget = "17"
     }
 
-    // JNI libs are extracted by Android to nativeLibraryDir (executable partition)
+    // Must be true: we need the .so files extracted to nativeLibraryDir at install time
+    // so we can create symlinks to them and execute them from the terminal session.
     packaging {
-        jniLibs { useLegacyPackaging = false }
+        jniLibs { useLegacyPackaging = true }
     }
 }
 
